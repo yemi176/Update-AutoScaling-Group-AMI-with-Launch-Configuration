@@ -2,6 +2,7 @@ import sys
 import boto3
 import datetime
 from logger import logging
+import json
 
 time_stamp = str(datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
@@ -57,15 +58,15 @@ def CreateNewLC(asg_name, ami_id):
                 LcOldName,
             ])
         # - Giữ nguyên tất cả cấu hình cũ (key, sg, instancetype, iamrole, userdata).
-        sourceInstanceId = asg_info.get('AutoScalingGroups')[
-            0]['Instances'][0]['InstanceId']
+        sourceInstanceId = asg_info.get('AutoScalingGroups')[0]['Instances'][0]['InstanceId']
         keypair = LcOldInfo['LaunchConfigurations'][0]['KeyName']
         sg = LcOldInfo['LaunchConfigurations'][0]['SecurityGroups']
         instance_type = LcOldInfo['LaunchConfigurations'][0]['InstanceType']
-        # iamrole = LcOldInfo['LaunchConfigurations'][0]['IamInstanceProfile']
+        iamrole = LcOldInfo['LaunchConfigurations'][0]['IamInstanceProfile']
         userdata = LcOldInfo['LaunchConfigurations'][0]['UserData']
 
     # clone to newLC + # - Đặt tên LC mới có prefix là thời gian tạo.
+        lc_name = str(datetime.datetime.now().strftime("%Y%m%d-%H%M%S")) + "-LC"
         lastest_lc = asg_client.create_launch_configuration(
             InstanceId=sourceInstanceId,
             LaunchConfigurationName=str(
@@ -74,10 +75,9 @@ def CreateNewLC(asg_name, ami_id):
             KeyName=keypair,
             SecurityGroups=sg,
             UserData=userdata,
-            InstanceType=instance_type
+            InstanceType=instance_type,
+            IamInstanceProfile=iamrole
         )
-
-        lc_name = lastest_lc['LaunchConfigurationName']
         return lc_name
     except Exception as e:
         print(e)
@@ -88,16 +88,24 @@ def CreateNewLC(asg_name, ami_id):
 def UpdateAsgWithNewLC(asg_name, ):
     lastest_ami = CreateNewAmiFromInstance(asg_name)
     lastest_lc_name = CreateNewLC(asg_name, lastest_ami)
+    result = {}
+    result['LC'] = lastest_lc_name
     try:
         response = asg_client.update_auto_scaling_group(
             AutoScalingGroupName=asg_name, LaunchConfigurationName=lastest_lc_name)
 
-        return 'Updated ASG `%s` with new launch configuration `%s` which includes AMI `%s`.' % (asg_name, lastest_lc_name, lastest_ami)
-    except Exception as e:
-        print(e)
-    return False
+        print(f'Updated ASG {asg_name} with new launch configuration {lastest_lc_name} which includes AMI {lastest_ami}')
+        result['result'] = True
+        return result
+    except:
+        result['result'] = False
+    return  result
 
 
 if __name__ == "__main__":
-    asg_name = sys.argv[0]
-    UpdateAsgWithNewLC(asg_name)
+    asg_name = sys.argv[1]
+    #print(asg_name)
+    result = UpdateAsgWithNewLC(asg_name)
+    print(json.dumps(result))
+    
+
